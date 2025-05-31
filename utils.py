@@ -23,13 +23,16 @@ def call_openai_api_with_functions(
     Returns parsed JSON arguments from function call.
     """
     config = load_config()
-    
+
+    # Create a custom HTTP client with timeout
+    custom_http_client = httpx.Client(timeout=30.0, verify=False)
+
     try:
         client = AzureOpenAI(
             api_key=config["azure_openai"]["api_key"],
             api_version=config["azure_openai"]["api_version"],
             azure_endpoint=config["azure_openai"]["endpoint"],
-            timeout=30.0  # Request timeout
+            http_client=custom_http_client  # Pass the custom client here
         )
         
         response = client.chat.completions.create(
