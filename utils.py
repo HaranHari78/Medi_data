@@ -40,7 +40,7 @@ def call_openai_api_with_functions(
     model: str,
     messages: List[Dict[str, str]],
     functions: List[Dict[str, Any]],
-    function_call: Optional[Dict[str, str]] = None
+    function_call: Optional[Union[Dict[str, str], str]] = None
 ) -> Optional[Dict[str, Any]]:
     
     config = load_config()
@@ -55,16 +55,34 @@ def call_openai_api_with_functions(
                 http_client=client
             )
             
+            # Convert functions to the expected format if needed
+            api_functions = [
+                {
+                    "name": func["name"],
+                    "description": func.get("description", ""),
+                    "parameters": func["parameters"]
+                }
+                for func in functions
+            ]
+            
+            # Handle function_call parameter
+            api_function_call = function_call if function_call else "auto"
+            if isinstance(api_function_call, dict):
+                api_function_call = {"name": api_function_call["name"]}
+            
             response = openai_client.chat.completions.create(
                 model=model,
                 messages=formatted_messages,
-                functions=functions,
-                function_call=function_call or "auto"
+                tools=[{
+                    "type": "function",
+                    "function": func
+                } for func in api_functions],
+                tool_choice=api_function_call
             )
             
             if (response.choices and 
-                response.choices[0].message.function_call):
-                return json.loads(response.choices[0].message.function_call.arguments)
+                response.choices[0].message.tool_calls):
+                return json.loads(response.choices[0].message.tool_calls[0].function.arguments)
             return None
             
     except Exception as e:
