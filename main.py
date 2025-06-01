@@ -1,50 +1,65 @@
+import asyncio
 import json
-from typing import Dict
-from utils import call_openai_api_with_functions
-from prompts import get_extraction_functions
+import os
+import pandas as pd
+from prompts import sentence_extraction_prompt, field_extraction_prompt, function_definitions
+from utils import load_config, call_openai_with_function
+from schemas import StructuredOutput
 
-def process_medical_document(document_text: str) -> Dict:
-    """
-    End-to-end medical document processor:
-    1. Extracts relevant sentences
-    2. Converts them to structured data
-    """
-    # --- Stage 1: Extract Sentences ---
-    stage1_result = call_openai_api_with_functions(
-        model="gpt-4",
-        messages=[{"role": "user", "content": document_text}],
-        functions=get_extraction_functions(),
-        function_call={"name": "extract_relevant_sentences"}
+# Configuration
+openai_config = load_config()
+model = openai_config['get_models']['model_gpt4o']
+input_file = 'medicaldata.csv'
+sentence_output_file = 'output/extracted_sentences.json'
+structured_output_file = 'output/structured_data.json'
+
+sentence_results = []
+structured_results = []
+
+async def process_row(index, row):
+    title = row.get('title', '')
+    text = row.get('text', '')
+    if not text:
+        return
+
+    prompt1 = sentence_extraction_prompt(title, text)
+    sentence_response = await call_openai_with_function(model, prompt1, function_definitions, 'extract_sentences')
+    if not sentence_response:
+        return
+
+    sentence_results.append(sentence_response)
+
+    combined_text = ". ".join(
+        sentence_response.get('aml_diagnosis_sentences', []) +
+        sentence_response.get('precedent_disease_sentences', []) +
+        sentence_response.get('performance_status_sentences', []) +
+        sentence_response.get('mutational_status_sentences', [])
     )
-    
-    if not stage1_result:
-        raise ValueError("❌ Stage 1 failed: No sentences extracted")
+    prompt2 = field_extraction_prompt(combined_text)
+    structured_response = await call_openai_with_function(model, prompt2, function_definitions, 'extract_structured_data')
+    if not structured_response:
+        return
 
-    # --- Stage 2: Structure Data ---
-    stage2_result = call_openai_api_with_functions(
-        model="gpt-4",
-        messages=[
-            {"role": "user", "content": document_text},
-            {"role": "assistant", "content": json.dumps(stage1_result)}
-        ],
-        functions=get_extraction_functions(),
-        function_call={"name": "extract_structured_fields"}
-    )
+    structured_response['document_title'] = title
+    try:
+        validated = StructuredOutput(**structured_response)
+        structured_results.append(validated.dict())
+    except Exception as e:
+        print(f"Validation error on row {index}:", e)
 
-    return stage2_result or {}
+async def main():
+    os.makedirs("output", exist_ok=True)
+    df = pd.read_csv(input_file)
+    tasks = [process_row(i, row) for i, row in df.iterrows()]
+    await asyncio.gather(*tasks)
+
+    with open(sentence_output_file, 'w', encoding='utf-8') as f:
+        json.dump(sentence_results, f, indent=4)
+
+    with open(structured_output_file, 'w', encoding='utf-8') as f:
+        json.dump(structured_results, f, indent=4)
+
+    print("✅ Data saved to output files")
 
 if __name__ == "__main__":
-    # Example Usage
-    sample_report = """
-    PATIENT: John Doe
-    DATE: 2023-10-15
-    DIAGNOSIS: AML with FLT3-ITD mutation (2023-09-01).
-    PRIOR HISTORY: MDS (2022-05-10), ECOG 1.
-    GENETICS: NPM1 negative, TP53 positive.
-    """
-    
-    try:
-        result = process_medical_document(sample_report)
-        print(json.dumps(result, indent=2))
-    except Exception as e:
-        print(f"Error: {e}")
+    asyncio.run(main())
