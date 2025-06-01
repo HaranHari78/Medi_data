@@ -1,221 +1,132 @@
-from typing import List, Dict, Any
+# prompts.py
 
-def get_extraction_functions() -> List[Dict[str, Any]]:
-    """Returns function definitions for two-stage medical data extraction"""
-    return [
-        # Stage 1: Sentence Extraction
-        {
-            "name": "extract_relevant_sentences",
-            "description": "Identify and extract relevant sentences about AML diagnosis and related medical factors",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "document_title": {
-                        "type": "string",
-                        "description": "Title or identifier of the medical document"
+def sentence_extraction_prompt(title, text):
+    return f"""
+    You are a clinical information extractor analyzing documents for AML cancer patients.
+    Your task is to identify and extract sentences providing evidence for:
+    - AML Diagnosis Date
+    - Precedent Disease (with date of mention)
+    - Performance Status (ECOG or KPS with date)
+    - Mutational Status (genes like NPM1, RUNX1, etc.)
+
+    Avoid vague phrases like "may suggest". Use full, exact sentences from the text.
+
+    Document Title: {title}
+    Document Text: {text}
+
+    Return JSON like:
+    {{
+        "document_title": "{title}",
+        "aml_diagnosis_sentences": [],
+        "precedent_disease_sentences": [],
+        "performance_status_sentences": [],
+        "mutational_status_sentences": []
+    }}
+    """
+
+def field_extraction_prompt(text):
+    return f"""
+    Extract structured AML data from the following clinical note.
+
+    Note:
+    \"\"\"{text}\"\"\"
+
+    Return JSON:
+    {{
+        "aml_diagnosis_date": {{"value": "", "evidence": ""}},
+        "precedent_disease": [{{"disease": "", "date": "", "evidence": ""}}],
+        "performance_status": {{
+            "kps_score": {{"value": "", "date": "", "evidence": ""}},
+            "ecog_score": {{"value": "", "date": "", "evidence": ""}}
+        }},
+        "mutational_status": {{
+            "NPM1": {{"status": "", "date": "", "evidence": ""}},
+            "RUNX1": {{"status": "", "date": "", "evidence": ""}},
+            "TP53": {{"status": "", "date": "", "evidence": ""}},
+            "FLT3": {{"status": "", "date": "", "evidence": ""}},
+            "ASXL1": {{"status": "", "date": "", "evidence": ""}}
+        }}
+    }}
+    """
+
+function_definitions = [
+    {
+        "name": "extract_sentences",
+        "description": "Extract evidence sentences grouped by clinical category",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "aml_diagnosis_sentences": {"type": "array", "items": {"type": "string"}},
+                "precedent_disease_sentences": {"type": "array", "items": {"type": "string"}},
+                "performance_status_sentences": {"type": "array", "items": {"type": "string"}},
+                "mutational_status_sentences": {"type": "array", "items": {"type": "string"}}
+            },
+            "required": ["aml_diagnosis_sentences", "precedent_disease_sentences", "performance_status_sentences", "mutational_status_sentences"]
+        }
+    },
+    {
+        "name": "extract_structured_data",
+        "description": "Extract structured AML clinical data from sentences",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "aml_diagnosis_date": {
+                    "type": "object",
+                    "properties": {
+                        "value": {"type": "string"},
+                        "evidence": {"type": "string"}
                     },
-                    "aml_diagnosis_sentences": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Sentences confirming AML diagnosis including subtype if available"
-                    },
-                    "precedent_disease_sentences": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Sentences describing prior hematologic disorders or relevant cancer history"
-                    },
-                    "performance_status_sentences": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Sentences indicating ECOG/Karnofsky performance status scores"
-                    },
-                    "mutational_status_sentences": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Sentences about genetic mutations (NPM1, FLT3, etc.) with testing dates if available"
-                    }
+                    "required": ["value", "evidence"]
                 },
-                "required": [
-                    "document_title",
-                    "aml_diagnosis_sentences",
-                    "precedent_disease_sentences",
-                    "performance_status_sentences",
-                    "mutational_status_sentences"
-                ]
-            }
-        },
-
-        # Stage 2: Structured Data Extraction
-        {
-            "name": "extract_structured_fields",
-            "description": "Convert extracted medical information into standardized structured format",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "aml_diagnosis_date": {
+                "precedent_disease": {
+                    "type": "array",
+                    "items": {
                         "type": "object",
                         "properties": {
-                            "value": {
-                                "type": "string",
-                                "description": "Date of AML diagnosis in YYYY-MM-DD format when available"
-                            },
-                            "evidence": {
-                                "type": "string",
-                                "description": "Supporting text from the document"
-                            }
+                            "disease": {"type": "string"},
+                            "date": {"type": "string"},
+                            "evidence": {"type": "string"}
                         },
-                        "required": ["evidence"]
-                    },
-                    "precedent_disease": {
-                        "type": "array",
-                        "items": {
+                        "required": ["disease", "date", "evidence"]
+                    }
+                },
+                "performance_status": {
+                    "type": "object",
+                    "properties": {
+                        "kps_score": {
                             "type": "object",
                             "properties": {
-                                "disease_name": {
-                                    "type": "string",
-                                    "description": "Name of prior hematologic disorder or cancer"
-                                },
-                                "date": {
-                                    "type": "string",
-                                    "description": "Date of diagnosis if available (YYYY-MM-DD)"
-                                },
-                                "evidence": {
-                                    "type": "string",
-                                    "description": "Supporting text from the document"
-                                }
+                                "value": {"type": "string"},
+                                "date": {"type": "string"},
+                                "evidence": {"type": "string"}
                             },
-                            "required": ["disease_name", "evidence"]
-                        }
-                    },
-                    "performance_status": {
-                        "type": "object",
-                        "properties": {
-                            "kps_score": {
-                                "type": "object",
-                                "properties": {
-                                    "value": {
-                                        "type": "string",
-                                        "description": "Karnofsky Performance Status score (0-100)"
-                                    },
-                                    "date": {
-                                        "type": "string",
-                                        "description": "Assessment date in YYYY-MM-DD format"
-                                    },
-                                    "evidence": {
-                                        "type": "string",
-                                        "description": "Supporting text from the document"
-                                    }
-                                },
-                                "required": ["value", "evidence"]
-                            },
-                            "ecog_score": {
-                                "type": "object",
-                                "properties": {
-                                    "value": {
-                                        "type": "string",
-                                        "description": "ECOG Performance Status score (0-5)"
-                                    },
-                                    "date": {
-                                        "type": "string",
-                                        "description": "Assessment date in YYYY-MM-DD format"
-                                    },
-                                    "evidence": {
-                                        "type": "string",
-                                        "description": "Supporting text from the document"
-                                    }
-                                },
-                                "required": ["value", "evidence"]
-                            }
-                        }
-                    },
-                    "mutational_status": {
-                        "type": "object",
-                        "properties": {
-                            "NPM1": {
-                                "type": "object",
-                                "properties": {
-                                    "status": {
-                                        "type": "string",
-                                        "enum": ["Positive", "Negative", "Not Tested", "Unknown"],
-                                        "description": "Mutation status"
-                                    },
-                                    "date": {
-                                        "type": "string",
-                                        "description": "Test date in YYYY-MM-DD format"
-                                    },
-                                    "evidence": {
-                                        "type": "string",
-                                        "description": "Supporting text from the document"
-                                    }
-                                },
-                                "required": ["status", "evidence"]
-                            },
-                            "FLT3": {
-                                "type": "object",
-                                "properties": {
-                                    "status": {
-                                        "type": "string",
-                                        "enum": ["ITD Positive", "TKD Positive", "Negative", "Not Tested", "Unknown"],
-                                        "description": "FLT3 mutation subtype when available"
-                                    },
-                                    "date": {
-                                        "type": "string",
-                                        "description": "Test date in YYYY-MM-DD format"
-                                    },
-                                    "evidence": {
-                                        "type": "string",
-                                        "description": "Supporting text from the document"
-                                    }
-                                },
-                                "required": ["status", "evidence"]
-                            },
-                            # Additional genetic markers...
-                            "RUNX1": {
-                                "type": "object",
-                                "properties": {
-                                    "status": {
-                                        "type": "string",
-                                        "enum": ["Positive", "Negative", "Not Tested", "Unknown"]
-                                    },
-                                    "date": {"type": "string"},
-                                    "evidence": {"type": "string"}
-                                },
-                                "required": ["status", "evidence"]
-                            },
-                            "TP53": {
-                                "type": "object",
-                                "properties": {
-                                    "status": {
-                                        "type": "string",
-                                        "enum": ["Positive", "Negative", "Not Tested", "Unknown"]
-                                    },
-                                    "date": {"type": "string"},
-                                    "evidence": {"type": "string"}
-                                },
-                                "required": ["status", "evidence"]
-                            },
-                            "ASXL1": {
-                                "type": "object",
-                                "properties": {
-                                    "status": {
-                                        "type": "string",
-                                        "enum": ["Positive", "Negative", "Not Tested", "Unknown"]
-                                    },
-                                    "date": {"type": "string"},
-                                    "evidence": {"type": "string"}
-                                },
-                                "required": ["status", "evidence"]
-                            }
+                            "required": ["value", "date", "evidence"]
                         },
-                        "required": ["NPM1", "FLT3", "RUNX1", "TP53", "ASXL1"]
-                    }
+                        "ecog_score": {
+                            "type": "object",
+                            "properties": {
+                                "value": {"type": "string"},
+                                "date": {"type": "string"},
+                                "evidence": {"type": "string"}
+                            },
+                            "required": ["value", "date", "evidence"]
+                        }
+                    },
+                    "required": ["kps_score", "ecog_score"]
                 },
-                "required": [
-                    "aml_diagnosis_date",
-                    "precedent_disease",
-                    "performance_status",
-                    "mutational_status"
-                ]
-            }
+                "mutational_status": {
+                    "type": "object",
+                    "properties": {
+                        "NPM1": {"type": "object", "properties": {"status": {"type": "string"}, "date": {"type": "string"}, "evidence": {"type": "string"}}, "required": ["status", "date", "evidence"]},
+                        "RUNX1": {"type": "object", "properties": {"status": {"type": "string"}, "date": {"type": "string"}, "evidence": {"type": "string"}}, "required": ["status", "date", "evidence"]},
+                        "TP53": {"type": "object", "properties": {"status": {"type": "string"}, "date": {"type": "string"}, "evidence": {"type": "string"}}, "required": ["status", "date", "evidence"]},
+                        "FLT3": {"type": "object", "properties": {"status": {"type": "string"}, "date": {"type": "string"}, "evidence": {"type": "string"}}, "required": ["status", "date", "evidence"]},
+                        "ASXL1": {"type": "object", "properties": {"status": {"type": "string"}, "date": {"type": "string"}, "evidence": {"type": "string"}}, "required": ["status", "date", "evidence"]}
+                    },
+                    "required": ["NPM1", "RUNX1", "TP53", "FLT3", "ASXL1"]
+                }
+            },
+            "required": ["aml_diagnosis_date", "precedent_disease", "performance_status", "mutational_status"]
         }
-    ]
+    }
+]
