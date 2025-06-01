@@ -1,5 +1,3 @@
-# prompts.py
-
 def sentence_extraction_prompt(title, text):
     return f"""
     You are a clinical information extractor analyzing documents for AML cancer patients.
